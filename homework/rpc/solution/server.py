@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import argparse
+import json
 import logging
 
 from dslib import Communicator, Message
@@ -46,13 +47,40 @@ class RpcServer:
 
     def __init__(self, addr, service):
         # Your implementation
-        pass
+        self._comm = Communicator('server', addr)
+        self._service = service
+        self._id_to_msg_response = dict()
 
     def run(self):
         """Main server loop where it handles incoming RPC requests"""
 
         # Your implementation
-        pass
+        while True:
+            msg = self._comm.recv()
+            if msg.type != 'REQUEST':
+                continue
+            if msg.headers in self._id_to_msg_response.keys():
+                self._comm.send(self._id_to_msg_response[msg.headers], msg.sender)
+            content = json.loads(msg.body)
+            func = content[0]
+            args = content[1:]
+            try:
+                if func == 'put':
+                    res = self._service.put(*args)
+                elif func == 'get':
+                    res = self._service.get(*args)
+                elif func == 'append':
+                    res = self._service.append(*args)
+                elif func == 'remove':
+                    res = self._service.remove(*args)
+                else:
+                    raise Exception('Unknown func: ', func)
+            except Exception as e:
+                m = Message('ERROR', str(e))
+            else:
+                m = Message('OK', json.dumps(res))
+            self._id_to_msg_response[msg.headers] = m
+            self._comm.send(m, msg.sender)
 
 
 def main():

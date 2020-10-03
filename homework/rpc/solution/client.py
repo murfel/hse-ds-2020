@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import argparse
+import json
 import logging
 
 from dslib import Communicator, Message
@@ -33,13 +34,27 @@ class RpcClient:
     def __init__(self, server_addr):
         self._comm = Communicator('client')
         # Your implementation
-        pass
+        self._server_addr = server_addr
+        self._counter = 0
 
     def call(self, func, *args):
         """Call function on RPC server and return result"""
         
         # Your implementation
-        pass
+        self._counter += 1
+        for _ in range(100):
+            self._comm.send(Message('REQUEST', json.dumps([func, *args]), self._counter), self._server_addr)
+            msg = self._comm.recv(1)
+            if msg is None:
+                if func in 'get put'.split():
+                    continue
+                else:
+                    raise Exception('Response timeout')
+            else:
+                if msg.type == 'ERROR':
+                    raise Exception(msg.body)
+                return json.loads(msg.body)
+        raise Exception('Response timeout')
 
 
 class User:
