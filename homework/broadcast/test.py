@@ -313,6 +313,46 @@ class ThreeCrashesRandomTestCase(BaseTestCase):
             "Agreement property is not satisfied: correct - " + str(correct_delivered) + "/2, crashed - " + str(crashed_delivered) + "/3")
 
 
+class CausalTestCase(BaseTestCase):
+
+    def runTest(self):
+        self.assertTrue(self.ts.wait_processes(5, 1), "Startup timeout")
+        self.ts.set_real_time_mode(False)
+
+        # send a message from Alice
+        self.ts.send_local_message(self.peers[0], Message('SEND', 'Hello'))
+
+        # deliver the message
+        self.ts.set_message_delay(0, 1)
+        self.ts.step_until_no_events(1)
+
+        # make sure Bob received the message from Alice
+        msg = self.ts.wait_local_message(self.peers[1], 0)
+        self.assertIsNotNone(msg, "Peer Bob not received the first message")
+        self.assertEqual(msg.type, 'DELIVER')
+        self.assertEqual(msg.body, 'Alice: Hello')
+
+        # Bob replies to Alice
+        self.ts.send_local_message(self.peers[1], Message('SEND', 'Hi Alice'))
+
+        # deliver all the messages
+        self.ts.step_until_no_events(1)
+
+        # make sure all peers delivered the message
+        for peer in self.peers[2:]:
+            msg = self.ts.wait_local_message(peer, 0)
+            self.assertIsNotNone(msg, "Peer not delivered the message")
+            self.assertEqual(msg.type, 'DELIVER')
+            self.assertEqual(msg.body, 'Alice: Hello')
+
+        for peer in self.peers[1:]:
+            msg = self.ts.wait_local_message(peer, 1)
+            self.assertIsNotNone(msg, "Peer not delivered the message")
+            self.assertEqual(msg.type, 'DELIVER')
+            self.assertEqual(msg.body, 'Bob: Hi Alice')
+
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument(dest='impl_dir', metavar='DIRECTORY',
@@ -335,6 +375,8 @@ def main():
         TwoCrashesTestCase(
             args.impl_dir, args.debug),
         TwoCrashesRandomTestCase(
+            args.impl_dir, args.debug),
+        CausalTestCase(
             args.impl_dir, args.debug),
         # uncomment to see what happens when 3 of 5 processes fail
         # ThreeCrashesRandomTestCase(
