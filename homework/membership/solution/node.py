@@ -17,15 +17,15 @@ class Node(Process):
         self.on_leave()
 
     def on_leave(self):
+        # keep self.counter as is
         self.mem_list = dict()
         self.addr_to_name = dict()
-        pass
 
     def send_msg(self, ctx, message_type, body=None, recipient_addr=None, multicast=False):
         recipients = self.mem_list.keys() if multicast else [recipient_addr]
         for recipient_addr in recipients:
-            if recipient_addr == ctx.addr():
-                continue
+            # if recipient_addr == ctx.addr():
+            #     continue
             ctx.send(Message(message_type, body=body, headers={
                         'name': self.name,
                         'counter': self.counter,
@@ -77,9 +77,9 @@ class Node(Process):
 
             # Leave the group
             elif msg.type == 'LEAVE':
-                self.on_leave()
-                self.send_msg(ctx, 'leave', multicast=True)
                 ctx.cancel_timer('gossip')
+                # self.on_leave()
+                self.send_msg(ctx, 'leave', multicast=True)
 
             # Get a list of group members
             # - return the list of all known alive nodes in MEMBERS message
