@@ -48,9 +48,21 @@ class Node(Process):
     def bytes_to_float(b):
         return float(unpack('L', sha256(b.encode('utf-8')).digest()[:8])[0]) / 2 ** 64
 
-    def whose_node(self, key: str) -> str:
-        i = bisect_right([x[0] for x in self.points], Node.bytes_to_float(key))
-        return self.points[(i + 1) % len(self.points)][1]
+    def whose_node(self, key: str, points=None) -> str:
+        if points is None:
+            points = self.points
+        i = bisect_right([x[0] for x in points], Node.bytes_to_float(key))
+        return points[(i + 1) % len(points)][1]
+
+    # remove addr from member list and remove its points
+    def remove_member(self, addr):
+        self.addr_to_name.pop(addr)
+        self.points = list(filter(lambda x: x[1] != addr, self.points))
+
+    def merge_storage(self, kvs):
+        for kv in kvs:
+            key, value = kv.split('=')
+            self.storage[key] = value
 
     def receive(self, ctx, msg):
 
@@ -73,14 +85,25 @@ class Node(Process):
             # - request body: none
             # - response: none
             elif msg.type == 'LEAVE':
-                pass
+                new_points = list(filter(lambda x: x[1] != self.my_addr, self.points))
+                addr_to_kv_list = defaultdict(list)
+                for key, value in self.storage.items():
+                    new_addr = self.whose_node(key, new_points)
+                    if new_addr != self.my_addr:
+                        addr_to_kv_list[new_addr].append('='.join([key, value]))
+
+                for addr, lst in addr_to_kv_list.items():
+                    ctx.send(Message('your kvs', lst), addr)
+
+                for addr in self.addr_to_name.keys():
+                    if addr != self.my_addr:
+                        ctx.send(Message('i leave'), addr)
 
             # Get a list of nodes in the system
             # - request body: none
             # - response: MEMBERS message, body contains the list of all known alive nodes
             elif msg.type == 'GET_MEMBERS':
-                ctx.send_local(Message('MEMBERS',
-                                       list(map(self.addr_to_name.get, set(x[1] for x in self.points)))))
+                ctx.send_local(Message('MEMBERS', list(self.addr_to_name.values())))
 
             # Get key value
             # - request body: key
@@ -188,14 +211,18 @@ class Node(Process):
                     self.waiting_put_keys_values.remove(key)
             elif msg.type == 'delete global':
                 key = msg.body
-                if key in self.storage:
-                    self.storage.pop(key)
+                assert key in self.storage  # otherwise, wrong routing
+                self.storage.pop(key)
                 ctx.send(Message('delete global resp', key), msg.sender)
             elif msg.type == 'delete global resp':
                 key = msg.body
                 if key in self.waiting_delete_keys:
                     ctx.send_local(Message('DELETE_RESP'))
                     self.waiting_delete_keys.remove(key)
+            elif msg.type == 'your kvs':
+                self.merge_storage(msg.body)
+            elif msg.type == 'i leave':
+                self.remove_member(msg.sender)
             elif msg.type == '':
                 pass
 
