@@ -43,6 +43,14 @@ class Node(Process):
         self.points = list(set(self.points))
         self.points.sort()
 
+    def extract_and_send_alien_kv(self, addr, ctx):
+        alien_kv = [[key, value] for key, value in self.storage.items()
+                    if self.whose_node(key) == addr]
+        for key, _ in alien_kv:
+            self.storage.pop(key)
+        alien_kv = list(map(lambda x: '='.join(x), alien_kv))
+        ctx.send(Message('your kvs', alien_kv), addr)
+
     # stackoverflow.com/a/42909410/3478131
     @staticmethod
     def bytes_to_float(b):
@@ -176,6 +184,7 @@ class Node(Process):
             if msg.type == 'get addrs and points':
                 self.addr_to_name[msg.sender] = msg.headers
                 self.merge_points(Node.to_tuple_list(msg.body))
+                self.extract_and_send_alien_kv(msg.sender, ctx)
                 ctx.send(Message('addrs', headers=self.addr_to_name, body=self.points), msg.sender)
             elif msg.type == 'addrs':
                 self.addr_to_name = msg.headers
@@ -186,6 +195,7 @@ class Node(Process):
             elif msg.type == 'I joined':
                 self.addr_to_name[msg.sender] = msg.headers
                 self.merge_points(Node.to_tuple_list(msg.body))
+                self.extract_and_send_alien_kv(msg.sender, ctx)
             elif msg.type == 'get global':
                 key = msg.body
                 if key not in self.storage:
