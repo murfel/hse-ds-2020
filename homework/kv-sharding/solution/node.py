@@ -27,6 +27,7 @@ class Node(Process):
         self.waiting_get_keys = set()  # type: Set[str]
         self.waiting_put_keys_values = set()  # type: Set[str]
         self.waiting_delete_keys = set()  # type: Set[str]
+        self.waiting_ping_addrs = set()  # type: Set[str]
 
     def gen_and_add_points(self):
         new_points = [(random.random(), self.my_addr) for _ in range(Node.DEFAULT_NUM_POINTS)]
@@ -88,6 +89,7 @@ class Node(Process):
                 self.gen_and_add_points()
                 if seed != self.my_addr:
                     ctx.send(Message('get addrs and points', headers=self.name, body=self.points), seed)
+                ctx.set_timer('gossip', 1)
 
             # Remove node from the system
             # - request body: none
@@ -233,8 +235,11 @@ class Node(Process):
                 self.merge_storage(msg.body)
             elif msg.type == 'i leave':
                 self.remove_member(msg.sender)
-            elif msg.type == '':
-                pass
+            elif msg.type == 'ping':
+                ctx.send(Message('pong'), msg.sender)
+            elif msg.type == 'pong':
+                if msg.sender in self.waiting_ping_addrs:
+                    self.waiting_ping_addrs.remove(msg.sender)
 
             else:
                 err = Message('ERROR', 'unknown message: %s' % msg.type)
@@ -242,7 +247,16 @@ class Node(Process):
 
     def on_timer(self, ctx, timer):
         # type: (Context, str) -> None
-        pass
+        if timer == 'gossip':
+            if len(self.waiting_ping_addrs) > 0:
+                for crashed_addr in self.waiting_ping_addrs:
+                    self.remove_member(crashed_addr)
+
+            self.waiting_ping_addrs = set(self.addr_to_name.keys())
+            self.waiting_ping_addrs.remove(self.my_addr)
+            for addr in self.waiting_ping_addrs:
+                ctx.send(Message('ping'), addr)
+            ctx.set_timer('gossip', 1)
 
 
 def main():
